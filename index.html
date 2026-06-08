@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>Rishi — Pure Privacy Messaging</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0d1117;--sidebar:#161b22;--card:#1c2128;--border:#30363d;
+  --green:#25d366;--green2:#128c7e;--text:#e6edf3;--sub:#8b949e;
+  --red:#f85149;--msg-out:#1a4731;--msg-in:#1c2128;
+}
+html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text)}
+
+/* ── Auth ── */
+#auth-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px;overflow-y:auto}
+.auth-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px 24px;width:100%;max-width:400px}
+.app-logo{text-align:center;margin-bottom:24px}
+.app-logo h1{font-size:1.9rem;color:var(--green);font-weight:700}
+.app-logo p{color:var(--sub);font-size:.82rem;margin-top:4px}
+.auth-tabs{display:flex;margin-bottom:20px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.auth-tab{flex:1;padding:10px;text-align:center;cursor:pointer;background:transparent;color:var(--sub);font-size:.9rem;border:none;transition:all .2s}
+.auth-tab.active{background:var(--green);color:#fff;font-weight:600}
+.form-group{margin-bottom:13px}
+.form-group label{display:block;font-size:.75rem;color:var(--sub);margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+.form-group input{width:100%;padding:12px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:1rem;outline:none;transition:border-color .2s}
+.form-group input:focus{border-color:var(--green)}
+.btn-primary{width:100%;padding:13px;background:var(--green);border:none;border-radius:8px;color:#fff;font-size:1rem;font-weight:600;cursor:pointer;margin-top:8px}
+.btn-primary:active{opacity:.8}
+.auth-err{color:var(--red);font-size:.83rem;text-align:center;margin-top:8px;min-height:18px}
+.g-divider{display:flex;align-items:center;gap:8px;margin:14px 0;color:var(--sub);font-size:.8rem}
+.g-divider::before,.g-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.g-btn-wrap{display:flex;justify-content:center;margin-bottom:4px}
+.google-note{background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);border-radius:8px;padding:10px 12px;font-size:.78rem;color:#58a6ff;line-height:1.5;margin-top:10px}
+
+/* ── App layout ── */
+#app{display:none;height:100vh;overflow:hidden}
+
+/* Desktop: side-by-side */
+@media(min-width:700px){
+  #app{display:none;flex-direction:row}
+  #app.show{display:flex}
+  #sidebar{width:320px;flex-shrink:0}
+  #chat-area{flex:1}
+  .back-btn{display:none!important}
+}
+
+/* Mobile: full-screen panels */
+@media(max-width:699px){
+  #app{display:none;position:relative}
+  #app.show{display:block}
+  #sidebar{position:absolute;inset:0;z-index:10;transition:transform .25s}
+  #chat-area{position:absolute;inset:0;z-index:10;transform:translateX(100%);transition:transform .25s}
+  #app.chat-open #sidebar{transform:translateX(-100%)}
+  #app.chat-open #chat-area{transform:translateX(0)}
+  .back-btn{display:flex!important}
+}
+
+/* ── Sidebar ── */
+#sidebar{background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100%;overflow:hidden}
+.sidebar-header{padding:12px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);min-height:56px}
+.sidebar-header .app-name{font-weight:700;font-size:1rem;color:var(--green);flex:1}
+.icon-btn{background:none;border:none;color:var(--sub);cursor:pointer;padding:7px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;min-width:34px;min-height:34px}
+.icon-btn:hover{background:var(--border);color:var(--text)}
+.sidebar-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
+.sidebar-tab{flex:1;padding:9px 4px;text-align:center;cursor:pointer;color:var(--sub);font-size:.78rem;font-weight:500;border:none;background:transparent;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap}
+.sidebar-tab.active{color:var(--green);border-bottom-color:var(--green)}
+.sidebar-search{padding:9px 12px;border-bottom:1px solid var(--border);flex-shrink:0}
+.sidebar-search input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:20px;padding:7px 14px;color:var(--text);font-size:.85rem;outline:none}
+.sidebar-search input:focus{border-color:var(--green)}
+.conv-list{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.conv-item{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;border-bottom:1px solid rgba(48,54,61,.4);transition:background .1s;min-height:66px}
+.conv-item:hover,.conv-item.active{background:var(--card)}
+.avatar{width:46px;height:46px;border-radius:50%;background:var(--green2);display:flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:600;flex-shrink:0;overflow:hidden;position:relative}
+.avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.avatar-sm{width:38px;height:38px;font-size:.95rem}
+.online-dot{position:absolute;bottom:1px;right:1px;width:12px;height:12px;border-radius:50%;background:var(--green);border:2px solid var(--sidebar)}
+.conv-info{flex:1;min-width:0}
+.conv-name{font-size:.93rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-last{font-size:.78rem;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.conv-meta{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0}
+.conv-time{font-size:.7rem;color:var(--sub)}
+.badge{background:var(--green);color:#fff;font-size:.68rem;padding:2px 7px;border-radius:10px;font-weight:700;min-width:20px;text-align:center}
+.new-chat-btn{margin:10px 12px 12px;padding:11px;background:var(--green);border:none;border-radius:10px;color:#fff;font-weight:600;cursor:pointer;width:calc(100% - 24px);font-size:.92rem;flex-shrink:0}
+
+/* ── Chat area ── */
+#chat-area{background:var(--bg);display:flex;flex-direction:column;height:100%;overflow:hidden}
+.chat-header{padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);background:var(--sidebar);min-height:56px;flex-shrink:0}
+.back-btn{display:none;background:none;border:none;color:var(--green);font-size:1.3rem;cursor:pointer;padding:4px 8px 4px 0;margin-right:2px}
+.chat-header-info{flex:1;min-width:0}
+.chat-header-name{font-weight:600;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-header-sub{font-size:.74rem;color:var(--sub)}
+.messages{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:3px;-webkit-overflow-scrolling:touch}
+.msg{max-width:78%;padding:8px 11px;border-radius:12px;font-size:.9rem;line-height:1.45;word-break:break-word}
+@media(min-width:700px){.msg{max-width:68%}}
+.msg.out{align-self:flex-end;background:var(--msg-out);border-bottom-right-radius:3px}
+.msg.in{align-self:flex-start;background:var(--msg-in);border-bottom-left-radius:3px}
+.msg .msg-name{font-size:.7rem;color:var(--green);font-weight:600;margin-bottom:2px}
+.msg-time{font-size:.65rem;color:var(--sub);text-align:right;margin-top:3px;display:flex;align-items:center;justify-content:flex-end;gap:3px}
+.ticks{color:var(--sub)}.ticks.read{color:var(--green)}
+.msg-img{max-width:200px;border-radius:8px;cursor:pointer;display:block;margin-top:4px}
+.msg-file a{color:var(--green);text-decoration:none;font-size:.85rem}
+.typing-ind{font-size:.75rem;color:var(--sub);padding:3px 14px;font-style:italic;min-height:18px;flex-shrink:0}
+.input-area{padding:8px 12px;border-top:1px solid var(--border);background:var(--sidebar);flex-shrink:0}
+.emoji-picker{display:none;flex-wrap:wrap;gap:3px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px;margin-bottom:6px;max-height:130px;overflow-y:auto}
+.emoji-picker.open{display:flex}
+.emoji-picker span{cursor:pointer;font-size:1.25rem;padding:3px;border-radius:4px;line-height:1}
+.input-row{display:flex;align-items:flex-end;gap:6px}
+.input-row textarea{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:22px;padding:10px 14px;color:var(--text);font-size:.95rem;resize:none;max-height:100px;min-height:40px;line-height:1.4;outline:none;font-family:inherit}
+.input-row textarea:focus{border-color:var(--green)}
+.send-btn{background:var(--green);border:none;border-radius:50%;width:42px;height:42px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;flex-shrink:0;font-size:1.1rem}
+.attach-preview{padding:3px 0;display:none;align-items:center;gap:8px}
+.attach-preview.show{display:flex}
+.attach-preview span{font-size:.8rem;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.attach-preview button{background:none;border:none;color:var(--red);cursor:pointer;font-size:.85rem;flex-shrink:0}
+.placeholder-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--sub)}
+.placeholder-screen .big{font-size:2.8rem}
+
+/* ── Modals ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:flex-end;justify-content:center;padding:0}
+@media(min-width:700px){.modal-overlay{align-items:center;padding:16px}}
+.modal-overlay.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:14px 14px 0 0;padding:24px 20px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;position:relative}
+@media(min-width:700px){.modal{border-radius:14px}}
+.modal h3{font-size:1rem;margin-bottom:16px}
+.modal-close{position:absolute;top:14px;right:14px;background:none;border:none;color:var(--sub);cursor:pointer;font-size:1.2rem;line-height:1;padding:4px}
+.modal .form-group{margin-bottom:12px}
+.modal-err{color:var(--red);font-size:.82rem;margin-top:6px;min-height:16px}
+.profile-avatar-wrap{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:16px}
+.profile-avatar-wrap .avatar{width:70px;height:70px;font-size:1.5rem;cursor:pointer}
+.profile-avatar-wrap p{font-size:.76rem;color:var(--sub)}
+
+/* ── Updates panel ── */
+.updates-header{padding:10px 12px;border-bottom:1px solid var(--border);font-size:.73rem;color:var(--sub);flex-shrink:0}
+.tweet-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:9px}
+.tweet-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.tw-name{font-weight:600;font-size:.88rem}
+.tw-time{font-size:.72rem;color:var(--sub);margin-left:auto}
+.tweet-content{font-size:.88rem;line-height:1.5;white-space:pre-wrap}
+.tweet-img{max-width:100%;border-radius:8px;margin-top:6px;cursor:pointer}
+.tweet-actions{display:flex;gap:6px;margin-top:8px}
+.tweet-actions button{background:none;border:none;color:var(--sub);font-size:.77rem;cursor:pointer;padding:4px 8px;border-radius:6px}
+.tweet-actions button:hover{background:var(--border);color:var(--text)}
+.tweet-compose{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:12px}
+.tweet-compose textarea{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px;color:var(--text);font-size:.88rem;resize:none;min-height:68px;font-family:inherit;outline:none}
+.tweet-compose textarea:focus{border-color:var(--green)}
+.tw-row{display:flex;gap:8px;margin-top:8px;align-items:center}
+.tw-char{font-size:.76rem;color:var(--sub);flex:1}
+.section-label{font-size:.72rem;color:var(--sub);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin:8px 0 6px}
+
+/* ── Context menu ── */
+.ctx-menu{display:none;position:fixed;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:4px;z-index:9999;min-width:140px;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.ctx-menu.show{display:block}
+.ctx-menu button{display:block;width:100%;padding:9px 12px;background:none;border:none;color:var(--text);text-align:left;font-size:.88rem;cursor:pointer;border-radius:4px}
+.ctx-menu button:hover{background:var(--border)}
+.ctx-menu button.danger{color:var(--red)}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--green2);color:#fff;padding:10px 20px;border-radius:20px;font-size:.84rem;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;white-space:nowrap}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ═══ AUTH ═══ -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="app-logo">
+      <h1>🔒 Rishi</h1>
+      <p>Pure Privacy Messaging</p>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchAuthTab('login')">Login</button>
+      <button class="auth-tab" onclick="switchAuthTab('signup')">Sign Up</button>
+    </div>
+
+    <!-- Google button -->
+    <div id="google-auth-section" style="display:none">
+      <div class="g-btn-wrap"><div id="google-signin-btn"></div></div>
+      <div class="g-divider">or use phone</div>
+    </div>
+
+    <!-- Login -->
+    <div id="login-form">
+      <div class="form-group"><label>Phone Number</label>
+        <input id="l-phone" type="tel" placeholder="e.g. 9876543210" inputmode="numeric"/></div>
+      <div class="form-group"><label>Password</label>
+        <input id="l-pass" type="password" placeholder="Password"/></div>
+      <button class="btn-primary" onclick="doLogin()">Login</button>
+      <div class="auth-err" id="login-err"></div>
+    </div>
+
+    <!-- Signup -->
+    <div id="signup-form" style="display:none">
+      <div class="form-group"><label>Phone Number (your Chat ID)</label>
+        <input id="s-phone" type="tel" placeholder="e.g. 9876543210" inputmode="numeric"/></div>
+      <div class="form-group"><label>Display Name</label>
+        <input id="s-name" type="text" placeholder="Your name"/></div>
+      <div class="form-group"><label>Password (min 6 chars)</label>
+        <input id="s-pass" type="password" placeholder="Password"/></div>
+      <button class="btn-primary" onclick="doSignup()">Create Account</button>
+      <div class="auth-err" id="signup-err"></div>
+    </div>
+
+    <!-- Google — new user phone step -->
+    <div id="google-phone-form" style="display:none">
+      <p style="font-size:.84rem;color:var(--sub);margin-bottom:12px">One last step — enter your phone number as your Chat ID</p>
+      <div class="form-group"><label>Name</label>
+        <input id="gp-name" type="text" placeholder="Display name"/></div>
+      <div class="form-group"><label>Phone Number (Chat ID)</label>
+        <input id="gp-phone" type="tel" placeholder="e.g. 9876543210" inputmode="numeric"/></div>
+      <button class="btn-primary" onclick="completeGoogleSignup()">Continue</button>
+      <div class="auth-err" id="google-err"></div>
+    </div>
+
+    <!-- Google not configured note -->
+    <div id="google-setup-note" style="display:none" class="google-note">
+      🔑 <strong>Enable Google Auth:</strong> add <code>GOOGLE_CLIENT_ID=...</code> to <code>.env</code><br/>
+      Get a free ID at <strong>console.cloud.google.com</strong>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MAIN APP ═══ -->
+<div id="app">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <span class="app-name">🔒 Rishi</span>
+      <button class="icon-btn" onclick="openProfileModal()" title="Profile">👤</button>
+      <button class="icon-btn" onclick="doLogout()" title="Logout">🚪</button>
+    </div>
+
+    <div class="sidebar-tabs">
+      <button class="sidebar-tab active" id="tab-chats"   onclick="switchTab('chats')">💬 Chats</button>
+      <button class="sidebar-tab"        id="tab-meetings" onclick="switchTab('meetings')">📅 Meet</button>
+      <button class="sidebar-tab"        id="tab-updates"  onclick="switchTab('updates')">📢 Updates</button>
+    </div>
+
+    <!-- Chats -->
+    <div id="chats-panel" style="display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+      <div class="sidebar-search"><input id="chat-search" placeholder="Search chats…" oninput="renderConvList()"/></div>
+      <div class="conv-list" id="conv-list"></div>
+      <button class="new-chat-btn" onclick="openNewChatModal()">+ New Chat</button>
+    </div>
+
+    <!-- Meetings -->
+    <div id="meetings-panel" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+      <div class="sidebar-search"><input id="meeting-search" placeholder="Search meetings…" oninput="renderMeetingList()"/></div>
+      <div class="conv-list" id="meeting-list"></div>
+      <button class="new-chat-btn" onclick="openNewMeetingModal()">+ New Meeting</button>
+    </div>
+
+    <!-- Updates (Tweets) -->
+    <div id="updates-panel" style="display:none;flex-direction:column;flex:1;overflow:hidden;min-height:0">
+      <div class="updates-header">Visible to contacts only · disappears after being seen</div>
+      <div style="flex:1;overflow-y:auto;padding:10px 12px;-webkit-overflow-scrolling:touch">
+        <div class="tweet-compose">
+          <textarea id="tweet-input" placeholder="Share something with your contacts…" maxlength="500"
+            oninput="document.getElementById('tw-char').textContent=500-this.value.length"></textarea>
+          <div class="tw-row">
+            <span class="tw-char" id="tw-char">500</span>
+            <button class="icon-btn" onclick="document.getElementById('tweet-file').click()">📸</button>
+            <input type="file" id="tweet-file" style="display:none" accept="image/*" onchange="handleTweetMedia(event)"/>
+            <button class="btn-primary" style="width:auto;padding:9px 16px;margin:0;font-size:.85rem" onclick="postTweet()">Post</button>
+          </div>
+          <div id="tweet-media-preview" style="margin-top:8px"></div>
+        </div>
+        <div id="tweet-inbox"></div>
+        <div id="tweet-mine"></div>
+      </div>
+    </div>
+  </div><!-- /sidebar -->
+
+  <!-- CHAT AREA -->
+  <div id="chat-area">
+    <!-- Placeholder -->
+    <div id="placeholder" class="placeholder-screen">
+      <div class="big">🔒</div>
+      <p><strong>Rishi</strong></p>
+      <p style="font-size:.8rem">Messages auto-delete after 1 hour</p>
+    </div>
+
+    <!-- Chat view -->
+    <div id="chat-view" style="display:none;flex-direction:column;height:100%;overflow:hidden">
+      <div class="chat-header">
+        <button class="back-btn" onclick="goBack()">‹</button>
+        <div class="avatar avatar-sm" id="chat-avatar">?</div>
+        <div class="chat-header-info">
+          <div class="chat-header-name" id="chat-name"></div>
+          <div class="chat-header-sub"  id="chat-sub"></div>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="icon-btn" id="invite-btn" onclick="copyInviteLink()" title="Invite link" style="display:none">🔗</button>
+        </div>
+      </div>
+      <div class="messages" id="messages"></div>
+      <div class="typing-ind" id="typing-ind"></div>
+      <div class="input-area">
+        <div class="attach-preview" id="attach-preview">
+          <span id="attach-name"></span>
+          <button onclick="clearAttach()">✕</button>
+        </div>
+        <div class="emoji-picker" id="emoji-picker"></div>
+        <div class="input-row">
+          <button class="icon-btn" onclick="toggleEmoji()">😊</button>
+          <button class="icon-btn" onclick="document.getElementById('file-input').click()">📎</button>
+          <input type="file" id="file-input" style="display:none" onchange="handleFile(event)"/>
+          <textarea id="msg-input" placeholder="Message…" rows="1"
+            onkeydown="handleKey(event)" oninput="autoGrow(this);sendTyping()"></textarea>
+          <button class="send-btn" onclick="sendMsg()">➤</button>
+        </div>
+      </div>
+    </div>
+  </div><!-- /chat-area -->
+
+</div><!-- /app -->
+
+<!-- ═══ MODALS ═══ -->
+
+<!-- New Chat -->
+<div class="modal-overlay" id="new-chat-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('new-chat-modal')">✕</button>
+    <h3>Start New Chat</h3>
+    <div class="form-group"><label>Phone Number</label>
+      <input id="nc-phone" type="tel" placeholder="Contact's phone number" inputmode="numeric"/></div>
+    <div id="nc-found" style="display:none;background:var(--bg);padding:10px;border-radius:8px;margin-bottom:10px">
+      <strong id="nc-uname"></strong><br/>
+      <span id="nc-uphone" style="font-size:.8rem;color:var(--sub)"></span>
+    </div>
+    <button class="btn-primary" onclick="findUser()">Find User</button>
+    <button class="btn-primary" id="nc-start-btn" style="display:none;background:var(--green2);margin-top:8px" onclick="startFoundDM()">Start Chat</button>
+    <div class="modal-err" id="nc-err"></div>
+  </div>
+</div>
+
+<!-- New Meeting -->
+<div class="modal-overlay" id="new-meeting-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('new-meeting-modal')">✕</button>
+    <h3>Create Meeting</h3>
+    <div class="form-group"><label>Meeting Name</label>
+      <input id="nm-name" type="text" placeholder="e.g. Team Sync"/></div>
+    <div class="form-group"><label>Description (optional)</label>
+      <input id="nm-desc" type="text" placeholder="What's this about?"/></div>
+    <button class="btn-primary" onclick="doCreateMeeting()">Create</button>
+    <div class="modal-err" id="nm-err"></div>
+  </div>
+</div>
+
+<!-- Profile -->
+<div class="modal-overlay" id="profile-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('profile-modal')">✕</button>
+    <h3>Your Profile</h3>
+    <div class="profile-avatar-wrap">
+      <div class="avatar" id="prof-avatar-disp" onclick="document.getElementById('avatar-input').click()"
+        style="width:70px;height:70px;font-size:1.5rem;cursor:pointer"></div>
+      <p>Tap to change photo</p>
+      <input type="file" id="avatar-input" accept="image/*" style="display:none" onchange="handleAvatarChange(event)"/>
+    </div>
+    <div class="form-group"><label>Phone (Chat ID)</label><input id="prof-phone" readonly style="opacity:.55"/></div>
+    <div class="form-group"><label>Display Name</label><input id="prof-name" type="text" maxlength="40"/></div>
+    <div class="form-group"><label>Bio</label><input id="prof-bio" type="text" placeholder="About me…" maxlength="160"/></div>
+    <button class="btn-primary" onclick="saveProfile()">Save</button>
+    <div class="modal-err" id="prof-err"></div>
+  </div>
+</div>
+
+<!-- Image lightbox -->
+<div class="modal-overlay" id="img-lightbox" onclick="closeModal('img-lightbox')"
+  style="background:rgba(0,0,0,.92);padding:12px">
+  <img id="lightbox-img" style="max-width:100%;max-height:90vh;border-radius:8px;object-fit:contain"/>
+</div>
+
+<!-- Context menu -->
+<div class="ctx-menu" id="ctx-menu">
+  <button class="danger" onclick="ctxDelete()">🗑️ Delete message</button>
+  <button onclick="closeCtx()">Cancel</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let token = localStorage.getItem("rishi_token")||null;
+let _meRaw = JSON.parse(localStorage.getItem("rishi_me")||"null");
+let me    = _meRaw ? {..._meRaw, id: _meRaw.id ?? _meRaw.user_id} : null;
+let socket = null;
+let currentChat  = null; // {type,id,otherId?,name,inviteToken?}
+let conversations = [];
+let meetings      = [];
+let pendingFile   = null;
+let tweetMedia    = null;
+let foundUser     = null;
+let googleTmpToken= null;
+let ctxMsgId = null, ctxMsgType = null;
+let typingTimer = null, typingClearT = null;
+
+const EMOJIS = ["😀","😂","🥰","😎","😢","😡","🤔","🎉","🔥","💯","✅","❤️","👍","👋",
+  "🙏","😊","🤣","😍","🥺","😭","🤯","🎊","💪","🌟","✨","🔒","📸","💬","📱","💡",
+  "🙌","👏","😏","🤝","💀","🍕","🎮","🏆","🌈","🤗","😤","💁","🫶","🤌","⚡"];
+
+// ── API ────────────────────────────────────────────────────────────────────
+async function api(path, method="GET", body=null, fd=null){
+  const h={};
+  if(token) h["Authorization"]="Bearer "+token;
+  const opts={method,headers:h};
+  if(fd){ opts.body=fd; }
+  else if(body){ h["Content-Type"]="application/json"; opts.body=JSON.stringify(body); }
+  try{
+    const r=await fetch(path,opts);
+    if(r.status===401){doLogout();return{};}
+    return await r.json();
+  }catch(e){return{error:"Network error"}}
+}
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+function switchAuthTab(t){
+  document.getElementById("login-form").style.display  = t==="login" ?"":"none";
+  document.getElementById("signup-form").style.display = t==="signup"?"":"none";
+  document.querySelectorAll(".auth-tab").forEach((el,i)=>
+    el.classList.toggle("active",(i===0&&t==="login")||(i===1&&t==="signup")));
+}
+
+async function doLogin(){
+  const phone=(document.getElementById("l-phone").value||"").trim().replace(/\D/g,"");
+  const pass=document.getElementById("l-pass").value;
+  if(!phone||!pass){setErr("login-err","Enter phone and password");return}
+  const r=await api("/api/login","POST",{phone,password:pass});
+  if(r.error){setErr("login-err",r.error);return}
+  startSession(r);
+}
+
+async function doSignup(){
+  const phone=(document.getElementById("s-phone").value||"").trim().replace(/\D/g,"");
+  const username=(document.getElementById("s-name").value||"").trim();
+  const pass=document.getElementById("s-pass").value;
+  if(!phone||!username||!pass){setErr("signup-err","All fields required");return}
+  const r=await api("/api/register","POST",{phone,username,password:pass});
+  if(r.error){setErr("signup-err",r.error);return}
+  startSession(r);
+}
+
+function startSession(d){
+  token=d.token; me={...d, id: d.id ?? d.user_id};
+  localStorage.setItem("rishi_token",token);
+  localStorage.setItem("rishi_me",JSON.stringify(me));
+  document.getElementById("auth-screen").style.display="none";
+  const app=document.getElementById("app");
+  app.style.display=""; app.classList.add("show");
+  initApp();
+}
+
+async function doLogout(){
+  if(socket)socket.disconnect();
+  await api("/api/logout","POST");
+  token=null;me=null;
+  localStorage.removeItem("rishi_token");
+  localStorage.removeItem("rishi_me");
+  location.reload();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+async function initApp(){
+  buildEmojiPicker();
+  requestNotifPerm();
+  connectSocket();
+  await Promise.all([loadConversations(),loadMeetings()]);
+  const jp=new URLSearchParams(location.search).get("join");
+  if(jp){
+    const r=await api("/api/meetings/join/"+jp,"GET");
+    if(!r.error){history.replaceState({},"","/");openMeeting(r);}
+    else toast("Invalid invite link");
+  }
+}
+
+function requestNotifPerm(){
+  if("Notification"in window&&Notification.permission==="default")
+    Notification.requestPermission();
+}
+
+// ── Socket ────────────────────────────────────────────────────────────────
+function connectSocket(){
+  socket=io({query:{token}});
+  socket.on("connect",()=>console.log("Socket OK"));
+  socket.on("new_dm",         m=>onNewDM(m));
+  socket.on("dm_notification",d=>upsertConv(d));
+  socket.on("new_meeting_msg",m=>onNewMeetingMsg(m));
+  socket.on("meeting_created",m=>upsertMeeting(m));
+  socket.on("messages_read",  d=>markTicks());
+  socket.on("dm_user_typing", d=>{ if(currentChat?.type==="dm"&&currentChat.otherId===d.other_id) showTyping(d.username); });
+  socket.on("user_typing",    d=>{ if(currentChat?.type==="meeting"&&currentChat.id===d.meeting_id) showTyping(d.username); });
+  socket.on("user_online",    d=>updateStatus(d.user_id,true));
+  socket.on("user_offline",   d=>updateStatus(d.user_id,false));
+  socket.on("message_deleted",d=>removeMsg(d.id));
+  socket.on("new_tweet",      t=>addTweetCard(t,"inbox",true));
+  setInterval(()=>socket.emit("ping_online"),30000);
+}
+
+// ── Conversations ─────────────────────────────────────────────────────────
+async function loadConversations(){
+  const r=await api("/api/conversations","GET");
+  if(Array.isArray(r)){conversations=r;renderConvList();}
+}
+
+function renderConvList(){
+  const q=(document.getElementById("chat-search")?.value||"").toLowerCase();
+  const el=document.getElementById("conv-list");
+  el.innerHTML="";
+  conversations
+    .filter(c=>!q||c.other_username.toLowerCase().includes(q)||c.other_phone.includes(q))
+    .forEach(c=>{
+      const d=document.createElement("div");
+      d.className="conv-item"+(currentChat?.type==="dm"&&currentChat.otherId===c.other_id?" active":"");
+      const av=c.other_avatar?`<img src="${esc(c.other_avatar)}"/>`:(c.other_username[0]||"?").toUpperCase();
+      const dot=c.online?'<span class="online-dot"></span>':"";
+      d.innerHTML=`
+        <div class="avatar">${av}${dot}</div>
+        <div class="conv-info">
+          <div class="conv-name">${esc(c.other_username)}</div>
+          <div class="conv-last">${c.is_mine?"You: ":""}${esc(c.last_message||"")}</div>
+        </div>
+        <div class="conv-meta">
+          <span class="conv-time">${fmtTime(c.last_at)}</span>
+          ${c.unread_count?`<span class="badge">${c.unread_count}</span>`:""}
+        </div>`;
+      d.onclick=()=>openDM(c);
+      el.appendChild(d);
+    });
+}
+
+function upsertConv(d){
+  const i=conversations.findIndex(c=>c.other_id===d.other_id);
+  if(i>=0){
+    conversations[i]={...conversations[i],...d};
+    if(!d.is_mine&&!(currentChat?.type==="dm"&&currentChat.otherId===d.other_id))
+      conversations[i].unread_count=(conversations[i].unread_count||0)+1;
+  } else conversations.unshift(d);
+  conversations.sort((a,b)=>b.last_at.localeCompare(a.last_at));
+  renderConvList();
+  if(!d.is_mine&&!(currentChat?.type==="dm"&&currentChat.otherId===d.other_id))
+    pushNotif(d.other_username,d.last_message);
+}
+
+// ── Meetings ──────────────────────────────────────────────────────────────
+async function loadMeetings(){
+  const r=await api("/api/meetings","GET");
+  if(Array.isArray(r)){meetings=r;renderMeetingList();}
+}
+
+function renderMeetingList(){
+  const q=(document.getElementById("meeting-search")?.value||"").toLowerCase();
+  const el=document.getElementById("meeting-list");
+  el.innerHTML="";
+  meetings.filter(m=>!q||m.name.toLowerCase().includes(q)).forEach(m=>{
+    const d=document.createElement("div");
+    d.className="conv-item"+(currentChat?.type==="meeting"&&currentChat.id===m.id?" active":"");
+    d.innerHTML=`
+      <div class="avatar" style="background:#1a4731">📅</div>
+      <div class="conv-info">
+        <div class="conv-name">${esc(m.name)}</div>
+        <div class="conv-last">${esc(m.description||"Meeting room")}</div>
+      </div>`;
+    d.onclick=()=>openMeeting(m);
+    el.appendChild(d);
+  });
+}
+
+function upsertMeeting(m){
+  const i=meetings.findIndex(x=>x.id===m.id);
+  if(i>=0)meetings[i]=m; else meetings.push(m);
+  renderMeetingList();
+}
+
+function openNewMeetingModal(){
+  document.getElementById("nm-name").value="";
+  document.getElementById("nm-desc").value="";
+  document.getElementById("nm-err").textContent="";
+  document.getElementById("new-meeting-modal").classList.add("open");
+}
+
+async function doCreateMeeting(){
+  const name=document.getElementById("nm-name").value.trim();
+  const desc=document.getElementById("nm-desc").value.trim();
+  if(!name){setErr("nm-err","Name required");return}
+  const r=await api("/api/meetings","POST",{name,description:desc});
+  if(r.error){setErr("nm-err",r.error);return}
+  closeModal("new-meeting-modal");
+  upsertMeeting(r); openMeeting(r);
+}
+
+// ── Open DM ───────────────────────────────────────────────────────────────
+async function openDM(c){
+  if(socket&&currentChat?.type==="dm")     socket.emit("leave_dm",     {other_id:currentChat.otherId});
+  if(socket&&currentChat?.type==="meeting")socket.emit("leave_meeting",{meeting_id:currentChat.id});
+
+  currentChat={type:"dm",id:c.other_id,otherId:c.other_id,name:c.other_username};
+  const cv=conversations.find(x=>x.other_id===c.other_id);
+  if(cv)cv.unread_count=0;
+
+  showChatView(c.other_username, c.other_phone||"", c.other_avatar, false);
+  renderConvList();
+  socket.emit("join_dm",{other_id:c.other_id});
+  socket.emit("mark_dm_read",{sender_id:c.other_id});
+
+  const msgs=await api(`/api/dm/${c.other_id}/messages?limit=50`,"GET");
+  clearMsgs();
+  if(Array.isArray(msgs))msgs.forEach(m=>appendMsg(m,"dm"));
+  scrollDown();
+
+  const st=await api(`/api/users/${c.other_id}/status`,"GET");
+  document.getElementById("chat-sub").textContent=
+    st.online?"Online":st.last_seen?`Last seen ${fmtTime(st.last_seen)}`:"";
+}
+
+// ── Open Meeting ──────────────────────────────────────────────────────────
+async function openMeeting(m){
+  if(socket&&currentChat?.type==="dm")     socket.emit("leave_dm",     {other_id:currentChat.otherId});
+  if(socket&&currentChat?.type==="meeting")socket.emit("leave_meeting",{meeting_id:currentChat.id});
+
+  currentChat={type:"meeting",id:m.id,name:m.name,inviteToken:m.invite_token};
+  showChatView("📅 "+m.name, m.description||"Meeting", null, true);
+  renderMeetingList();
+
+  socket.emit("join_meeting",{meeting_id:m.id});
+  const msgs=await api(`/api/meetings/${m.id}/messages?limit=50`,"GET");
+  clearMsgs();
+  if(Array.isArray(msgs))msgs.forEach(msg=>appendMsg(msg,"meeting"));
+  scrollDown();
+}
+
+function showChatView(name, sub, avatar, isMeeting){
+  document.getElementById("placeholder").style.display="none";
+  const cv=document.getElementById("chat-view");
+  cv.style.display="flex";
+  document.getElementById("chat-name").textContent=name;
+  document.getElementById("chat-sub").textContent=sub||"";
+  const av=document.getElementById("chat-avatar");
+  if(avatar)av.innerHTML=`<img src="${esc(avatar)}"/>`;
+  else av.textContent=(name||"?")[0].toUpperCase();
+  document.getElementById("invite-btn").style.display=isMeeting?"":"none";
+  // Mobile: show chat panel
+  document.getElementById("app").classList.add("chat-open");
+}
+
+function goBack(){
+  document.getElementById("app").classList.remove("chat-open");
+}
+
+function copyInviteLink(){
+  if(!currentChat?.inviteToken){toast("No invite token");return}
+  const link=`${location.origin}/?join=${currentChat.inviteToken}`;
+  navigator.clipboard.writeText(link).then(()=>toast("Invite link copied!"))
+    .catch(()=>{prompt("Copy this link:",link);});
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────
+function clearMsgs(){document.getElementById("messages").innerHTML="";}
+
+function appendMsg(msg, type){
+  const isMe=(msg.sender_id===me?.id)||(msg.user_id===me?.id);
+  const el=document.createElement("div");
+  el.className="msg "+(isMe?"out":"in");
+  el.dataset.id=msg.id; el.dataset.type=type;
+  let html="";
+  if(!isMe&&type==="meeting")html+=`<div class="msg-name">${esc(msg.username||"")}</div>`;
+  if(msg.file_url){
+    const isImg=/\.(png|jpg|jpeg|gif|webp)$/i.test(msg.file_url);
+    if(isImg) html+=`<img class="msg-img" src="${esc(msg.file_url)}" onclick="openLightbox('${esc(msg.file_url)}')"/>`;
+    else html+=`<div class="msg-file">📎 <a href="${esc(msg.file_url)}" target="_blank" rel="noopener">${esc(msg.file_name||"File")}</a></div>`;
+  }
+  if(msg.content)html+=`<div>${esc(msg.content)}</div>`;
+  const ticks=isMe?`<span class="ticks${msg.is_read?" read":""}">✓✓</span>`:"";
+  html+=`<div class="msg-time">${fmtTime(msg.created_at)} ${ticks}</div>`;
+  el.innerHTML=html;
+  el.addEventListener("contextmenu",e=>{e.preventDefault();showCtx(e,msg.id,type,isMe);});
+  // Long press for mobile
+  let lp;
+  el.addEventListener("touchstart",()=>{ lp=setTimeout(()=>showCtxByEl(el,msg.id,type,isMe),600); },{passive:true});
+  el.addEventListener("touchend",()=>clearTimeout(lp));
+  document.getElementById("messages").appendChild(el);
+}
+
+function onNewDM(msg){
+  if(currentChat?.type!=="dm")return;
+  const inThis=(msg.sender_id===me?.id&&currentChat.otherId===msg.receiver_id)||
+               (msg.sender_id!==me?.id&&currentChat.otherId===msg.sender_id);
+  if(inThis){
+    appendMsg(msg,"dm"); scrollDown();
+    if(msg.sender_id!==me?.id) socket.emit("mark_dm_read",{sender_id:msg.sender_id});
+  }
+}
+
+function onNewMeetingMsg(msg){
+  if(currentChat?.type==="meeting"&&currentChat.id===msg.meeting_id){
+    appendMsg(msg,"meeting"); scrollDown();
+  }
+}
+
+function markTicks(){
+  document.querySelectorAll("#messages .msg.out .ticks").forEach(el=>el.classList.add("read"));
+}
+
+function removeMsg(id){
+  document.querySelector(`#messages [data-id="${id}"]`)?.remove();
+}
+
+function scrollDown(){
+  const m=document.getElementById("messages");
+  requestAnimationFrame(()=>m.scrollTop=m.scrollHeight);
+}
+
+// ── Send ──────────────────────────────────────────────────────────────────
+async function sendMsg(){
+  const inp=document.getElementById("msg-input");
+  const content=inp.value.trim();
+  if(!content&&!pendingFile)return;
+  if(!currentChat||!socket)return;
+
+  let fd=null;
+  if(pendingFile){
+    const form=new FormData(); form.append("file",pendingFile);
+    const r=await api("/api/upload","POST",null,form);
+    if(r.error){toast("Upload failed: "+r.error);return}
+    fd={file_url:r.url,file_name:r.name,file_type:r.type};
+    clearAttach();
+  }
+
+  if(currentChat.type==="dm")
+    socket.emit("send_dm",{receiver_id:currentChat.otherId,content,...(fd||{})});
+  else
+    socket.emit("send_meeting_msg",{meeting_id:currentChat.id,content,...(fd||{})});
+
+  inp.value=""; autoGrow(inp);
+  document.getElementById("emoji-picker").classList.remove("open");
+}
+
+function handleKey(e){
+  if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMsg();}
+}
+
+function sendTyping(){
+  if(!socket||!currentChat)return;
+  clearTimeout(typingTimer);
+  if(currentChat.type==="dm")socket.emit("dm_typing",{other_id:currentChat.otherId});
+  else socket.emit("meeting_typing",{meeting_id:currentChat.id});
+  typingTimer=setTimeout(()=>{},3000);
+}
+
+function showTyping(name){
+  document.getElementById("typing-ind").textContent=name+" is typing…";
+  clearTimeout(typingClearT);
+  typingClearT=setTimeout(()=>document.getElementById("typing-ind").textContent="",3000);
+}
+
+// ── File ──────────────────────────────────────────────────────────────────
+function handleFile(e){
+  const f=e.target.files[0]; if(!f)return;
+  if(f.size>20*1024*1024){toast("Max file size is 20MB");return}
+  pendingFile=f;
+  document.getElementById("attach-name").textContent=f.name;
+  document.getElementById("attach-preview").classList.add("show");
+  e.target.value="";
+}
+function clearAttach(){
+  pendingFile=null;
+  document.getElementById("attach-preview").classList.remove("show");
+}
+
+// ── Emoji ─────────────────────────────────────────────────────────────────
+function buildEmojiPicker(){
+  const p=document.getElementById("emoji-picker");
+  EMOJIS.forEach(em=>{
+    const s=document.createElement("span"); s.textContent=em;
+    s.onclick=()=>{
+      const inp=document.getElementById("msg-input");
+      const pos=inp.selectionStart||inp.value.length;
+      inp.value=inp.value.slice(0,pos)+em+inp.value.slice(pos);
+      inp.focus();
+    };
+    p.appendChild(s);
+  });
+}
+function toggleEmoji(){document.getElementById("emoji-picker").classList.toggle("open");}
+
+// ── Context menu ──────────────────────────────────────────────────────────
+function showCtx(e, id, type, isMe){
+  if(!isMe)return;
+  ctxMsgId=id; ctxMsgType=type;
+  const m=document.getElementById("ctx-menu");
+  m.style.left=Math.min(e.clientX,window.innerWidth-160)+"px";
+  m.style.top =Math.min(e.clientY,window.innerHeight-80)+"px";
+  m.classList.add("show");
+}
+function showCtxByEl(el, id, type, isMe){
+  if(!isMe)return;
+  ctxMsgId=id; ctxMsgType=type;
+  const r=el.getBoundingClientRect();
+  const m=document.getElementById("ctx-menu");
+  m.style.left=Math.min(r.left,window.innerWidth-160)+"px";
+  m.style.top =Math.min(r.bottom+4,window.innerHeight-80)+"px";
+  m.classList.add("show");
+}
+function closeCtx(){document.getElementById("ctx-menu").classList.remove("show");}
+async function ctxDelete(){
+  closeCtx(); if(!ctxMsgId)return;
+  const ep=ctxMsgType==="dm"?`/api/dm/messages/${ctxMsgId}`:`/api/meetings/messages/${ctxMsgId}`;
+  const r=await api(ep,"DELETE");
+  if(r.error)toast(r.error);
+  else{removeMsg(ctxMsgId);toast("Deleted");}
+}
+document.addEventListener("click",()=>closeCtx());
+
+// ── Profile ───────────────────────────────────────────────────────────────
+function openProfileModal(){
+  document.getElementById("prof-phone").value=me?.phone||"";
+  document.getElementById("prof-name").value=me?.username||"";
+  document.getElementById("prof-bio").value=me?.bio||"";
+  document.getElementById("prof-err").textContent="";
+  const av=document.getElementById("prof-avatar-disp");
+  if(me?.avatar)av.innerHTML=`<img src="${esc(me.avatar)}"/>`;
+  else av.textContent=(me?.username||"?")[0].toUpperCase();
+  document.getElementById("profile-modal").classList.add("open");
+}
+function handleAvatarChange(e){
+  const f=e.target.files[0]; if(!f)return;
+  if(f.size>2*1024*1024){toast("Image must be under 2MB");return}
+  const r=new FileReader();
+  r.onload=ev=>{
+    me.avatar=ev.target.result;
+    const av=document.getElementById("prof-avatar-disp");
+    av.innerHTML=`<img src="${me.avatar}"/>`;
+  };
+  r.readAsDataURL(f); e.target.value="";
+}
+async function saveProfile(){
+  const username=document.getElementById("prof-name").value.trim();
+  const bio=document.getElementById("prof-bio").value.trim();
+  if(!username){setErr("prof-err","Name is required");return}
+  const r=await api("/api/profile","PUT",{username,bio,avatar:me.avatar||null});
+  if(r.error){setErr("prof-err",r.error);return}
+  me={...me,...r}; localStorage.setItem("rishi_me",JSON.stringify(me));
+  closeModal("profile-modal"); toast("Profile saved!");
+}
+
+// ── Find user ─────────────────────────────────────────────────────────────
+function openNewChatModal(){
+  foundUser=null;
+  document.getElementById("nc-phone").value="";
+  document.getElementById("nc-found").style.display="none";
+  document.getElementById("nc-start-btn").style.display="none";
+  document.getElementById("nc-err").textContent="";
+  document.getElementById("new-chat-modal").classList.add("open");
+}
+async function findUser(){
+  const ph=(document.getElementById("nc-phone").value||"").trim().replace(/\D/g,"");
+  if(!ph){setErr("nc-err","Enter a phone number");return}
+  const r=await api(`/api/users/find?phone=${ph}`,"GET");
+  if(r.error){setErr("nc-err",r.error);document.getElementById("nc-found").style.display="none";document.getElementById("nc-start-btn").style.display="none";return}
+  foundUser=r;
+  document.getElementById("nc-uname").textContent=r.username;
+  document.getElementById("nc-uphone").textContent=r.phone;
+  document.getElementById("nc-found").style.display="";
+  document.getElementById("nc-start-btn").style.display="";
+  document.getElementById("nc-err").textContent="";
+}
+function startFoundDM(){
+  if(!foundUser)return;
+  closeModal("new-chat-modal");
+  const c={other_id:foundUser.id,other_username:foundUser.username,other_phone:foundUser.phone,
+           other_avatar:foundUser.avatar,last_message:"",last_at:"",is_mine:false,unread_count:0,online:foundUser.online};
+  if(!conversations.find(x=>x.other_id===c.other_id))conversations.unshift(c);
+  renderConvList(); openDM(c);
+}
+
+// ── Online status ─────────────────────────────────────────────────────────
+function updateStatus(uid, online){
+  conversations.filter(c=>c.other_id===uid).forEach(c=>c.online=online);
+  renderConvList();
+  if(currentChat?.type==="dm"&&currentChat.otherId===uid)
+    document.getElementById("chat-sub").textContent=online?"Online":"Offline";
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+function switchTab(t){
+  ["chats","meetings","updates"].forEach(n=>{
+    document.getElementById(n+"-panel").style.display=t===n?"flex":"none";
+    document.getElementById("tab-"+n).classList.toggle("active",t===n);
+  });
+  if(t==="updates")loadTweets();
+}
+
+// ── Tweets ────────────────────────────────────────────────────────────────
+async function loadTweets(){
+  document.getElementById("tweet-inbox").innerHTML="";
+  document.getElementById("tweet-mine").innerHTML="";
+  const r=await api("/api/tweets","GET");
+  if(r.error)return;
+  if(r.inbox?.length){
+    document.getElementById("tweet-inbox").appendChild(mkLabel("From contacts"));
+    r.inbox.forEach(t=>addTweetCard(t,"inbox",false));
+  }
+  if(r.mine?.length){
+    document.getElementById("tweet-mine").appendChild(mkLabel("Your posts"));
+    r.mine.forEach(t=>addTweetCard(t,"mine",false));
+  }
+}
+
+function mkLabel(txt){
+  const h=document.createElement("div");
+  h.className="section-label"; h.textContent=txt; return h;
+}
+
+function addTweetCard(t, section, prepend=false){
+  const el=document.createElement("div");
+  el.className="tweet-card"; el.dataset.id=t.id;
+  const av=t.avatar?`<img src="${esc(t.avatar)}"/>`:(t.username||"?")[0].toUpperCase();
+  let html=`
+    <div class="tweet-header">
+      <div class="avatar avatar-sm">${av}</div>
+      <span class="tw-name">${esc(t.username||"")}</span>
+      <span class="tw-time">${fmtTime(t.created_at)}</span>
+    </div>
+    <div class="tweet-content">${esc(t.content||"")}</div>`;
+  if(t.media_url)html+=`<img class="tweet-img" src="${esc(t.media_url)}" onclick="openLightbox('${esc(t.media_url)}')"/>`;
+  html+=`<div class="tweet-actions">`;
+  if(section==="inbox")html+=`<button onclick="markTweetViewed(${t.id},this.closest('.tweet-card'))">👁 Seen</button>`;
+  if(t.user_id===me?.id)html+=`<button onclick="deleteTweet(${t.id},this.closest('.tweet-card'))">🗑 Delete</button>`;
+  html+=`</div>`;
+  el.innerHTML=html;
+  const tgt=document.getElementById(section==="mine"?"tweet-mine":"tweet-inbox");
+  if(prepend&&tgt.firstChild)tgt.insertBefore(el,tgt.firstChild); else tgt.appendChild(el);
+}
+
+async function markTweetViewed(id, card){
+  await api(`/api/tweets/${id}/view`,"POST");
+  card?.remove(); toast("Marked as seen");
+}
+async function deleteTweet(id, card){
+  const r=await api(`/api/tweets/${id}`,"DELETE");
+  if(r.error){toast(r.error);return}
+  card?.remove(); toast("Deleted");
+}
+async function postTweet(){
+  const content=document.getElementById("tweet-input").value.trim();
+  if(!content){toast("Write something first");return}
+  const body={content};
+  if(tweetMedia)body.media_url=tweetMedia;
+  const r=await api("/api/tweets","POST",body);
+  if(r.error){toast(r.error);return}
+  document.getElementById("tweet-input").value="";
+  document.getElementById("tw-char").textContent="500";
+  tweetMedia=null;
+  document.getElementById("tweet-media-preview").innerHTML="";
+  const mine=document.getElementById("tweet-mine");
+  if(!mine.firstChild)mine.appendChild(mkLabel("Your posts"));
+  addTweetCard(r,"mine",true);
+  toast("Posted!");
+}
+function handleTweetMedia(e){
+  const f=e.target.files[0]; if(!f)return;
+  if(f.size>5*1024*1024){toast("Image must be under 5MB");return}
+  const r=new FileReader();
+  r.onload=ev=>{
+    tweetMedia=ev.target.result;
+    document.getElementById("tweet-media-preview").innerHTML=`<img src="${tweetMedia}" style="max-width:160px;border-radius:8px"/>`;
+  };
+  r.readAsDataURL(f); e.target.value="";
+}
+
+// ── Lightbox ──────────────────────────────────────────────────────────────
+function openLightbox(src){
+  document.getElementById("lightbox-img").src=src;
+  document.getElementById("img-lightbox").classList.add("open");
+}
+
+// ── Push notifications ────────────────────────────────────────────────────
+function pushNotif(title, body){
+  if(document.hasFocus())return;
+  if(Notification.permission==="granted")
+    new Notification("Rishi — "+title,{body:body||"New message"});
+}
+
+// ── Google Auth ───────────────────────────────────────────────────────────
+async function initGoogleAuth(){
+  const cfg=await api("/api/config","GET");
+  if(cfg.google_auth_enabled&&cfg.google_client_id){
+    document.getElementById("google-auth-section").style.display="";
+    const init=()=>{
+      if(!window.google?.accounts?.id)return setTimeout(init,800);
+      google.accounts.id.initialize({client_id:cfg.google_client_id,callback:handleGoogleSignIn});
+      google.accounts.id.renderButton(document.getElementById("google-signin-btn"),
+        {theme:"outline",size:"large",text:"continue_with",width:300});
+    };
+    init();
+  } else {
+    document.getElementById("google-setup-note").style.display="";
+  }
+}
+
+async function handleGoogleSignIn(resp){
+  const r=await api("/api/auth/google","POST",{credential:resp.credential});
+  if(r.error){setErr("login-err",r.error);setErr("signup-err",r.error);return}
+  if(r.new_user){
+    googleTmpToken=r.tmp_token;
+    ["login-form","signup-form","google-auth-section"].forEach(id=>document.getElementById(id).style.display="none");
+    document.getElementById("google-phone-form").style.display="";
+    document.querySelectorAll(".auth-tab").forEach(el=>el.style.display="none");
+    document.getElementById("gp-name").value=r.suggested_name||"";
+  } else startSession(r);
+}
+
+async function completeGoogleSignup(){
+  const phone=(document.getElementById("gp-phone").value||"").trim().replace(/\D/g,"");
+  const uname=(document.getElementById("gp-name").value||"").trim();
+  if(!phone||!uname){setErr("google-err","Enter name and phone");return}
+  const r=await api("/api/auth/google/complete","POST",{tmp_token:googleTmpToken,phone,username:uname});
+  if(r.error){setErr("google-err",r.error);return}
+  startSession(r);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function closeModal(id){document.getElementById(id).classList.remove("open");}
+function setErr(id, msg){document.getElementById(id).textContent=msg;}
+function toast(msg){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove("show"),2400);
+}
+function esc(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function fmtTime(ts){
+  if(!ts)return"";
+  const s=ts.endsWith("Z")||ts.includes("+")?ts:ts+"Z";
+  const d=new Date(s); if(isNaN(d))return"";
+  const diff=(Date.now()-d)/1000;
+  if(diff<60)return"now";
+  if(diff<3600)return Math.floor(diff/60)+"m";
+  if(diff<86400)return d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  return d.toLocaleDateString([],{month:"short",day:"numeric"});
+}
+function autoGrow(el){
+  el.style.height="auto";
+  el.style.height=Math.min(el.scrollHeight,100)+"px";
+}
+
+// Close modals on backdrop click
+document.querySelectorAll(".modal-overlay").forEach(el=>{
+  el.addEventListener("click",e=>{ if(e.target===el&&el.id!=="img-lightbox")closeModal(el.id); });
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+if(token&&me){
+  document.getElementById("auth-screen").style.display="none";
+  const app=document.getElementById("app");
+  app.style.display=""; app.classList.add("show");
+  initApp();
+} else {
+  initGoogleAuth();
+}
+</script>
+</body>
+</html>
